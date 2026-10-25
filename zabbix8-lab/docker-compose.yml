@@ -28,7 +28,7 @@ services:
 
   clickhouse:
     <<: *restart
-    image: clickhouse/clickhouse-server:${CLICKHOUSE_IMAGE_TAG:-25.8}
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_IMAGE_TAG:-26.8}
     container_name: zbx8-clickhouse
     env_file:
       - env/clickhouse/clickhouse.env
@@ -136,6 +136,8 @@ services:
     image: zabbix/zabbix-mcp-server:${ZBX_IMAGE_TAG:-alpine-trunk}
     container_name: zbx8-mcp-server
     read_only: true
+    tmpfs:
+      - /tmp
     env_file:
       - env/mcp-server/mcp.env
     ports:

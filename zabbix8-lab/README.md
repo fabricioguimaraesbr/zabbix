@@ -49,6 +49,9 @@ zabbix8-lab/
 └── apps/login-app/              # app de exemplo instrumentada (perfil demo)
 ```
 
+> **ClickHouse 26.8 ou mais novo é obrigatório**: o proxy envia os timestamps como número com fração
+> (`1792961467.316000000`), formato que o ClickHouse 25.8 rejeita com `ParsingError`.
+>
 > As senhas são padrões de laboratório (`zabbix`). Troque antes de expor o ambiente fora da sua máquina.
 > Se mudar a senha do ClickHouse, altere em `env/clickhouse/clickhouse.env` **e** em `env/common/telemetry.env`.
 
@@ -71,14 +74,40 @@ Acesse o frontend em http://localhost:8080 (usuário `Admin`, senha `zabbix`).
 
 ## Configuração no frontend
 
-1. **Proxy**: *Administration → Proxies → Create proxy*
+O receptor OTLP do proxy **só abre a porta 4317** quando os dois itens abaixo estão habilitados.
+Até lá, o collector registra `connection refused` ao tentar enviar dados ao proxy.
+
+1. **Fonte de dados APM (global)**: *Administration → General → APM*
+   - Status: configurado
+   - URL: `http://clickhouse:8123`, Database: `zabbix`
+   - Autenticação por senha: usuário `zabbix`, senha `zabbix` (valores de `env/clickhouse/clickhouse.env`)
+2. **Proxy**: *Administration → Proxies → Create proxy*
    - Name: `zabbix-proxy-otel` (igual a `ZBX_HOSTNAME` em `env/zabbix-proxy/proxy.env`)
    - Mode: **Active**
-2. **Host da aplicação**: *Data collection → Hosts → Create host*
+   - Aba **APM** → marque **Data collection enabled**
+   
+   Em até ~1 minuto o log do proxy deve mostrar
+   `[apm manager #1] Open Telemetry collector listening on 0.0.0.0:4317`.
+3. **Host da aplicação**: *Data collection → Hosts → Create host*
    - Monitored by: **Proxy** `zabbix-proxy-otel`
    - Template: **Generic OpenTelemetry by OTLP**
    - Ajuste as macros do template (por exemplo o nome do serviço: `zabbix-login-demo` para o app de exemplo).
-3. **Host "Zabbix server"**: altere a interface do agent para o DNS `zabbix-agent` (conectar por DNS).
+4. **Host "Zabbix server"**: altere a interface do agent para o DNS `zabbix-agent` (conectar por DNS).
+
+<details>
+<summary>Os passos 1 e 2 também podem ser feitos pela API</summary>
+
+```sh
+# settings.update: fonte de dados APM global (authentication_type 0 = senha)
+{"jsonrpc":"2.0","method":"settings.update","id":1,"params":{"apm_global_db":{
+  "status":1,"url":"http://clickhouse:8123","db":"zabbix",
+  "authentication_type":0,"username":"zabbix","password":"zabbix"}}}
+
+# proxy.create com coleta APM habilitada
+{"jsonrpc":"2.0","method":"proxy.create","id":2,"params":{
+  "name":"zabbix-proxy-otel","operating_mode":0,"apm":{"data_collection_status":1}}}
+```
+</details>
 
 Para gerar tráfego no app de exemplo, acesse http://localhost:3001 e faça login/logout
 (usuário e senha em `env/demo-app/app.env`).
