@@ -12,7 +12,7 @@ Ambiente de **teste** do Zabbix 8.0 (imagens `trunk`, pois a 8.0 ainda não tem 
 | `zabbix-proxy` | zbx8-proxy | 10061, 14317 | Proxy ativo com receptor **OTLP gRPC** nativo (APM collector) |
 | `otel-collector` | zbx8-otel-collector | 4317 (gRPC), 4318 (HTTP) | Recebe OTLP das aplicações e repassa ao proxy |
 | `zabbix-mcp-server` | zbx8-mcp-server | 8443 | Zabbix MCP server (`/mcp`) para agentes de IA |
-| `demo-app` *(perfil `demo`)* | zbx8-demo-app | 3001 | App Node.js instrumentada com OpenTelemetry |
+| `shop-app` *(perfil `demo`)* | zbx8-shop-app | 3001 | Loja de exemplo (e-commerce) instrumentada com OpenTelemetry |
 
 ## Fluxo da telemetria
 
@@ -42,11 +42,11 @@ zabbix8-lab/
 │   ├── zabbix-proxy/proxy.env
 │   ├── zabbix-agent/agent.env
 │   ├── mcp-server/mcp.env
-│   └── demo-app/app.env
+│   └── shop-app/app.env
 ├── config/
 │   ├── otel-collector/config.yaml
 │   └── clickhouse/initdb.d/01_otel_schema.sql
-└── apps/login-app/              # app de exemplo instrumentada (perfil demo)
+└── apps/shop-app/               # loja de exemplo instrumentada (perfil demo)
 ```
 
 > **ClickHouse 26.8 ou mais novo é obrigatório**: o proxy envia os timestamps como número com fração
@@ -64,7 +64,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Com a aplicação de exemplo gerando telemetria:
+Com a loja de exemplo gerando telemetria:
 
 ```sh
 docker compose --profile demo up -d --build
@@ -91,7 +91,7 @@ Até lá, o collector registra `connection refused` ao tentar enviar dados ao pr
 3. **Host da aplicação**: *Data collection → Hosts → Create host*
    - Monitored by: **Proxy** `zabbix-proxy-otel`
    - Template: **Generic OpenTelemetry by OTLP**
-   - Ajuste as macros do template (por exemplo o nome do serviço: `zabbix-login-demo` para o app de exemplo).
+   - Ajuste as macros do template (por exemplo o nome do serviço: `zabbix-shop-demo` para a loja de exemplo).
 4. **Host "Zabbix server"**: altere a interface do agent para o DNS `zabbix-agent` (conectar por DNS).
 
 <details>
@@ -109,8 +109,40 @@ Até lá, o collector registra `connection refused` ao tentar enviar dados ao pr
 ```
 </details>
 
-Para gerar tráfego no app de exemplo, acesse http://localhost:3001 e faça login/logout
-(usuário e senha em `env/demo-app/app.env`).
+## Loja de exemplo (shop-app)
+
+Um pequeno e-commerce em http://localhost:3001 para gerar telemetria realista: catálogo com 6 produtos,
+login, sacola, checkout com frete e pagamento **simulados** (nenhum dado de pagamento é pedido) e histórico de pedidos.
+
+**Usuários de teste** (`SHOP_USERS` em `env/shop-app/app.env`):
+
+| Usuário | Senha |
+|---|---|
+| `cliente` | `cliente123` |
+| `maria` | `maria123` |
+| `joao` | `joao123` |
+
+**O que cada compra gera**
+
+- **Traces**: `POST /checkout` → `checkout.process` com os filhos `checkout.validate`, `inventory.reserve`,
+  `shipping.quote`, `payment.authorize` e `order.create`. Falhas de pagamento e de estoque marcam os spans como erro.
+- **Métricas**: `shop.orders` (por status e forma de pagamento), `shop.revenue`, `shop.order.value`,
+  `shop.checkout.duration`, `shop.payment.duration`, `shop.cart.items_added`, `shop.logins`,
+  `shop.inventory.stock` (por produto) e `shop.sessions.active`.
+- **Logs** correlacionados ao trace: login (sucesso/falha), item adicionado/removido, pedido confirmado,
+  pagamento recusado, estoque insuficiente.
+
+**Simulação de problemas** (ajustável em `env/shop-app/app.env`):
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `PAYMENT_FAILURE_RATE` | `0.1` | Chance base de recusa. Cartão recusa 1,5× mais; Pix e boleto bem menos |
+| `SLOW_CHECKOUT_RATE` | `0.05` | Chance de o checkout passar por uma "análise antifraude" de 1,5 a 3,5 s |
+| `RESTOCK_INTERVAL_MINUTES` | `30` | Reabastece o estoque periodicamente (o Kit Raspberry Pi começa com só 3 unidades) |
+
+Depois de mudar o arquivo: `docker compose --profile demo up -d shop-app`.
+
+> O estado da loja (estoque, sacolas e pedidos) fica em memória e é zerado quando o container reinicia.
 
 ### Enviando telemetria das suas próprias aplicações
 

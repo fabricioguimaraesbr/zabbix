@@ -146,18 +146,18 @@ services:
       - zabbix-web
     networks: [zabbix]
 
-  # Aplicação de exemplo instrumentada com OpenTelemetry (opcional):
+  # Loja de exemplo instrumentada com OpenTelemetry (opcional):
   #   docker compose --profile demo up -d --build
-  demo-app:
+  shop-app:
     <<: *restart
     profiles: [demo]
     build:
-      context: ./apps/login-app
-    container_name: zbx8-demo-app
+      context: ./apps/shop-app
+    container_name: zbx8-shop-app
     env_file:
-      - env/demo-app/app.env
+      - env/shop-app/app.env
     ports:
-      - "${DEMO_APP_PORT:-3001}:8080"
+      - "${SHOP_APP_PORT:-3001}:8080"
     depends_on:
       - otel-collector
     networks: [zabbix]
