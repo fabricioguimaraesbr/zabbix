@@ -77,7 +77,7 @@ Acesse o frontend em http://localhost:8080 (usuário `Admin`, senha `zabbix`).
 O receptor OTLP do proxy **só abre a porta 4317** quando os dois itens abaixo estão habilitados.
 Até lá, o collector registra `connection refused` ao tentar enviar dados ao proxy.
 
-1. **Fonte de dados APM (global)**: *Administration → General → APM*
+1. **Fonte de dados APM (global)**: *Administration → Data source → APM*
    - Status: configurado
    - URL: `http://clickhouse:8123`, Database: `zabbix`
    - Autenticação por senha: usuário `zabbix`, senha `zabbix` (valores de `env/clickhouse/clickhouse.env`)
