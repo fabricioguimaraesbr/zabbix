@@ -46,7 +46,8 @@ zabbix8-lab/
 ├── config/
 │   ├── otel-collector/config.yaml
 │   └── clickhouse/initdb.d/01_otel_schema.sql
-└── apps/shop-app/               # loja de exemplo instrumentada (perfil demo)
+├── apps/shop-app/               # loja de exemplo instrumentada (perfil demo)
+└── templates/loja_zabbix_lab_by_otlp.yaml  # template Zabbix da loja
 ```
 
 > **ClickHouse 26.8 ou mais novo é obrigatório**: o proxy envia os timestamps como número com fração
@@ -148,6 +149,55 @@ Depois de mudar o arquivo: `docker compose --profile demo up -d shop-app`.
 
 - Via collector: `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` (gRPC) ou `http://localhost:4318` (HTTP).
 - Direto no proxy (somente gRPC): `http://localhost:14317`.
+
+## Template da loja: `Loja Zabbix Lab by OTLP`
+
+O template genérico **Generic OpenTelemetry by OTLP** soma a telemetria de *todas* as aplicações. Para
+monitorar a loja separadamente, use o template [`templates/loja_zabbix_lab_by_otlp.yaml`](templates/loja_zabbix_lab_by_otlp.yaml).
+Todos os itens filtram por `ServiceName = {$SHOP.SERVICE.NAME}`.
+
+**Importar e usar**
+
+1. *Data collection → Templates → Import* e selecione o YAML.
+2. Crie um host (ex.: `loja-zabbix-lab`), com *Monitored by* **Proxy** `zabbix-proxy-otel`, e vincule o template.
+   Não precisa de interface: os itens consultam o ClickHouse e a descoberta de produtos chama `{$SHOP.URL}/api/products`.
+
+**O que é coletado** (um valor por minuto)
+
+| Grupo | Itens |
+|---|---|
+| Vendas | pedidos confirmados (total e por Pix, cartão e boleto), recusados, sem estoque, com erro; receita; receita e pedidos na última hora; ticket médio; taxa de recusa (10 min); itens adicionados à sacola; logins com sucesso e com falha; sessões ativas |
+| Desempenho | duração média e máxima do checkout e do pagamento (histogramas) |
+| Traces | checkouts processados e com erro, p95 do checkout e do pagamento, requisições HTTP e respostas 500 |
+| Logs | quantidade de logs WARN e ERROR |
+| Por produto (LLD) | estoque e unidades adicionadas à sacola |
+
+**Triggers**
+
+| Trigger | Severidade | Macro |
+|---|---|---|
+| Sem telemetria | High | `{$SHOP.NODATA.PERIOD}` = 5m |
+| Produto esgotado | High | – |
+| Taxa de recusa de pagamentos alta | Average | `{$SHOP.PAYMENT.DECLINE.WARN}` = 20 %, mínimo `{$SHOP.PAYMENT.MIN.ATTEMPTS}` = 5 tentativas |
+| Erros nos logs | Average | `{$SHOP.ERROR.LOGS.WARN}` = 0 |
+| Checkout lento | Warning | `{$SHOP.CHECKOUT.DURATION.WARN}` = 2 s |
+| Muitas falhas de login | Warning | `{$SHOP.LOGIN.FAILURE.WARN}` = 5 em 5 min |
+| Estoque baixo | Warning | `{$SHOP.STOCK.LOW}` = 3 |
+| Checkouts sem estoque | Info | – |
+| Sem vendas | Info (fechamento manual) | `{$SHOP.NOSALES.PERIOD}` = 30m |
+
+**Como os itens funcionam**
+
+- São itens do tipo **Telemetry query**: cada coleta agrega, por janela de `{$SHOP.GRANULARITY}`, as linhas do
+  ClickHouse que atendem aos filtros (por exemplo, `MetricName = shop.orders` e `Attributes[shop.order.status] = confirmed`).
+- A loja exporta métricas com **temporalidade delta** (`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`
+  em `env/shop-app/app.env`). Assim cada ponto traz só o incremento, e `sum(Value)` na janela dá o total do minuto.
+  Com temporalidade cumulativa (padrão do OpenTelemetry), as somas ficariam infladas.
+- Janela sem dados devolve `No value`, convertido para `0` no pré-processamento. A exceção são *Sessões ativas* e
+  o estoque por produto: nesses casos o valor é descartado, para o trigger de ausência de telemetria (`nodata`) funcionar.
+- `{$SHOP.TIMESHIFT}` (30s) atrasa a consulta, para dar tempo de a telemetria passar por collector, proxy e ClickHouse.
+- Na **primeira coleta** depois de vincular o template, o Zabbix busca até `{$SHOP.LOOKBACK}` (10m) de histórico e
+  grava todas as janelas com o mesmo horário. Por isso o primeiro ponto pode aparecer alto nos gráficos.
 
 ## MCP Server
 

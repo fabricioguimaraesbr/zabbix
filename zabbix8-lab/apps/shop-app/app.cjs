@@ -89,6 +89,11 @@ function safeNext(value) {
 
 app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 
+// Usado pela regra de descoberta (LLD) do template do Zabbix.
+app.get('/api/products', (req, res) => {
+  res.json(store.listProducts().map(({ id, name, price }) => ({ id, name, price })));
+});
+
 app.get('/', async (req, res) => {
   const products = await queryCatalog('list_products', store.listProducts);
   res.send(views.catalogPage(res.locals.ctx, products));

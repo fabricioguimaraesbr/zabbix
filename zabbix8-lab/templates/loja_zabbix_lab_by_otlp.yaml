@@ -1,0 +1,1208 @@
+zabbix_export:
+  version: '8.0'
+  template_groups:
+    - uuid: a571c0d144b14fd4a87a9d9b2aa9fcd6
+      name: Templates/Applications
+  templates:
+    - uuid: b1db56cbb7ff4ef2aa416255541c0c59
+      template: 'Loja Zabbix Lab by OTLP'
+      name: 'Loja Zabbix Lab by OTLP'
+      description: 'Monitora a loja de exemplo do laboratório Zabbix 8.0 a partir da telemetria OpenTelemetry gravada no ClickHouse (itens Telemetry query). Requer métricas com temporalidade delta (OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta).'
+      groups:
+        - name: Templates/Applications
+      items:
+        - uuid: f492603b12704155b3a6f04a032b8d0f
+          name: 'Itens adicionados à sacola'
+          type: TELEMETRY_QUERY
+          key: shop.cart.items_added
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Unidades adicionadas à sacola por minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: MetricName
+                  value: shop.cart.items_added
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: 8122f72634a441bd8c8139b3e7c06f06
+          name: 'Checkout: duração média'
+          type: DEPENDENT
+          key: shop.checkout.duration.avg
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'var c = JSON.parse(value).columns; return c.count > 0 ? c.sum / c.count / 1000 : 0;'
+          master_item:
+            key: shop.checkout.duration.raw
+          tags:
+            - tag: component
+              value: desempenho
+          triggers:
+            - uuid: 06abdaf71f13408c8433846350b0544f
+              expression: 'last(/Loja Zabbix Lab by OTLP/shop.checkout.duration.avg)>{$SHOP.CHECKOUT.DURATION.WARN}'
+              name: 'Loja: checkout lento (média {ITEM.LASTVALUE1})'
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: performance
+        - uuid: 44f012fff901443ba4d5ad674d8f4a07
+          name: 'Checkout: duração máxima'
+          type: DEPENDENT
+          key: shop.checkout.duration.max
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'var c = JSON.parse(value).columns; return c.max / 1000;'
+          master_item:
+            key: shop.checkout.duration.raw
+          tags:
+            - tag: component
+              value: desempenho
+        - uuid: 7c99056479c94fd6af6f7e6491e40a69
+          name: 'Checkout: dados do histograma'
+          type: TELEMETRY_QUERY
+          key: shop.checkout.duration.raw
+          delay: '{$SHOP.FREQUENCY}'
+          history: 1d
+          value_type: TEXT
+          description: 'Soma, contagem e máximo do histograma shop.checkout.duration no minuto (ms).'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"sum":0,"count":0,"max":0}}'
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            metric_point_type: HISTOGRAM
+            aggregated_columns:
+              - function: SUM
+                column: Sum
+                alias: sum
+              - function: SUM
+                column: Count
+                alias: count
+              - function: MAX
+                column: Max
+                alias: max
+            filter:
+              evaltype: AND
+              conditions:
+                - column: MetricName
+                  value: shop.checkout.duration
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: desempenho
+        - uuid: 8f698ba113004d8495844453bae17ef4
+          name: 'Logins com falha'
+          type: TELEMETRY_QUERY
+          key: shop.logins.failure
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.login.outcome
+                  value: failure
+                - column: MetricName
+                  value: shop.logins
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+          triggers:
+            - uuid: b2c3243b74f94ba5aef62eec3e796da3
+              expression: 'sum(/Loja Zabbix Lab by OTLP/shop.logins.failure,5m)>{$SHOP.LOGIN.FAILURE.WARN}'
+              name: 'Loja: muitas falhas de login'
+              priority: WARNING
+              tags:
+                - tag: scope
+                  value: security
+        - uuid: b5913873991d492c9388a0dd67e4125d
+          name: 'Logins com sucesso'
+          type: TELEMETRY_QUERY
+          key: shop.logins.success
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.login.outcome
+                  value: success
+                - column: MetricName
+                  value: shop.logins
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: f5640b475c38452f9204670adf29a9b5
+          name: 'Logs ERROR'
+          type: TELEMETRY_QUERY
+          key: shop.logs.error
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: LOGS
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SeverityText
+                  value: ERROR
+          tags:
+            - tag: component
+              value: logs
+          triggers:
+            - uuid: 4e453daf322c479e916ff34d26b0a055
+              expression: 'sum(/Loja Zabbix Lab by OTLP/shop.logs.error,5m)>{$SHOP.ERROR.LOGS.WARN}'
+              name: 'Loja: erros registrados nos logs'
+              priority: AVERAGE
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: c459bf06e32248e7a54ed8e35a76bc58
+          name: 'Logs WARN'
+          type: TELEMETRY_QUERY
+          key: shop.logs.warn
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: LOGS
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SeverityText
+                  value: WARN
+          tags:
+            - tag: component
+              value: logs
+        - uuid: c09762d54912477ba36bbf91b2ef038b
+          name: 'Ticket médio (1h)'
+          type: CALCULATED
+          key: shop.order.avg_value
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: R$
+          params: 'sum(//shop.revenue,1h)/max(sum(//shop.orders.confirmed,1h),1)'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: 33de945bd56e41a6b8fc08d54cd7921f
+          name: 'Pedidos confirmados'
+          type: TELEMETRY_QUERY
+          key: shop.orders.confirmed
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Pedidos confirmados por minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: confirmed
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+          triggers:
+            - uuid: 4a2902ce137e45a9bbd90ea5ac5ae288
+              expression: 'sum(/Loja Zabbix Lab by OTLP/shop.orders.confirmed,{$SHOP.NOSALES.PERIOD})=0'
+              name: 'Loja: sem vendas há {$SHOP.NOSALES.PERIOD}'
+              priority: INFO
+              description: 'Informativo: num ambiente de teste com compras manuais este alerta é esperado.'
+              manual_close: 'YES'
+              tags:
+                - tag: scope
+                  value: notice
+        - uuid: 33d1a4dcc1f14f0d919d15bed10a52a6
+          name: 'Pedidos confirmados (1h)'
+          type: CALCULATED
+          key: shop.orders.confirmed.1h
+          delay: '{$SHOP.FREQUENCY}'
+          params: 'sum(//shop.orders.confirmed,1h)'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: 98f2ebd0b2fa410c80da5ef66cc2c0e3
+          name: 'Pedidos confirmados via boleto'
+          type: TELEMETRY_QUERY
+          key: shop.orders.confirmed.boleto
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: confirmed
+                - column: Attributes
+                  attribute_key: shop.payment.method
+                  value: boleto
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: e6c8c06f2c1d48ca95fe8a5f11dc1ca7
+          name: 'Pedidos confirmados via cartão'
+          type: TELEMETRY_QUERY
+          key: shop.orders.confirmed.credit_card
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: confirmed
+                - column: Attributes
+                  attribute_key: shop.payment.method
+                  value: credit_card
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: bc4188137fa448189089fb91d3efe898
+          name: 'Pedidos confirmados via Pix'
+          type: TELEMETRY_QUERY
+          key: shop.orders.confirmed.pix
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: confirmed
+                - column: Attributes
+                  attribute_key: shop.payment.method
+                  value: pix
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: e9a943795bd842cf8c363819c6b9f6f3
+          name: 'Pedidos com pagamento recusado'
+          type: TELEMETRY_QUERY
+          key: shop.orders.declined
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Checkouts recusados pelo pagamento simulado, por minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: payment_declined
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: ca01e45b5f4c4f3cb928bee97dd1e85f
+          name: 'Checkouts com erro inesperado'
+          type: TELEMETRY_QUERY
+          key: shop.orders.error
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Checkouts que falharam com erro interno, por minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: error
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: 1f8fefb5c4914602ae158c5dd7e6c891
+          name: 'Checkouts sem estoque'
+          type: TELEMETRY_QUERY
+          key: shop.orders.out_of_stock
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Checkouts interrompidos por estoque insuficiente, por minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: Attributes
+                  attribute_key: shop.order.status
+                  value: out_of_stock
+                - column: MetricName
+                  value: shop.orders
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+          triggers:
+            - uuid: c13b2083663b42b69b5ef1748634f7bb
+              expression: 'sum(/Loja Zabbix Lab by OTLP/shop.orders.out_of_stock,10m)>0'
+              name: 'Loja: checkouts interrompidos por falta de estoque'
+              priority: INFO
+              tags:
+                - tag: scope
+                  value: capacity
+        - uuid: 64c69bcf5b4242028dc0075fd7fcd412
+          name: 'Taxa de recusa de pagamentos (10m)'
+          type: CALCULATED
+          key: shop.payment.decline.rate
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: '%'
+          params: '100*sum(//shop.orders.declined,10m)/max(sum(//shop.orders.declined,10m)+sum(//shop.orders.confirmed,10m),1)'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: 8ff67e12efec4fdf884448f5088e221b
+          name: 'Pagamento: duração média'
+          type: DEPENDENT
+          key: shop.payment.duration.avg
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'var c = JSON.parse(value).columns; return c.count > 0 ? c.sum / c.count / 1000 : 0;'
+          master_item:
+            key: shop.payment.duration.raw
+          tags:
+            - tag: component
+              value: desempenho
+        - uuid: b8c2a15530244eefb7e4b44dcead68bb
+          name: 'Pagamento: duração máxima'
+          type: DEPENDENT
+          key: shop.payment.duration.max
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: JAVASCRIPT
+              parameters:
+                - 'var c = JSON.parse(value).columns; return c.max / 1000;'
+          master_item:
+            key: shop.payment.duration.raw
+          tags:
+            - tag: component
+              value: desempenho
+        - uuid: 89ef7f36770d434fa15ecc0b4a7a3bc2
+          name: 'Pagamento: dados do histograma'
+          type: TELEMETRY_QUERY
+          key: shop.payment.duration.raw
+          delay: '{$SHOP.FREQUENCY}'
+          history: 1d
+          value_type: TEXT
+          description: 'Soma, contagem e máximo do histograma shop.payment.duration no minuto (ms).'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"sum":0,"count":0,"max":0}}'
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            metric_point_type: HISTOGRAM
+            aggregated_columns:
+              - function: SUM
+                column: Sum
+                alias: sum
+              - function: SUM
+                column: Count
+                alias: count
+              - function: MAX
+                column: Max
+                alias: max
+            filter:
+              evaltype: AND
+              conditions:
+                - column: MetricName
+                  value: shop.payment.duration
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: desempenho
+        - uuid: 88ce820e4e6d470cb556be7609bdd09c
+          name: Receita
+          type: TELEMETRY_QUERY
+          key: shop.revenue
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: R$
+          description: 'Receita dos pedidos confirmados no minuto.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            aggregated_columns:
+              - function: SUM
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: MetricName
+                  value: shop.revenue
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: b1e1d92956b040e1ad297c6e43b87aac
+          name: 'Receita (1h)'
+          type: CALCULATED
+          key: shop.revenue.1h
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: R$
+          params: 'sum(//shop.revenue,1h)'
+          tags:
+            - tag: component
+              value: vendas
+        - uuid: b34f8582f4e34a46be22bf942777f7ca
+          name: 'Sessões ativas'
+          type: TELEMETRY_QUERY
+          key: shop.sessions.active
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Usuários logados na loja. Para de receber valores se a aplicação parar de enviar telemetria.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            signal_type: METRICS
+            metric_point_type: GAUGE
+            aggregated_columns:
+              - function: MAX
+                column: Value
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: MetricName
+                  value: shop.sessions.active
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+          tags:
+            - tag: component
+              value: vendas
+          triggers:
+            - uuid: 9763a3d13a1f4e36a6820483357e1905
+              expression: 'nodata(/Loja Zabbix Lab by OTLP/shop.sessions.active,{$SHOP.NODATA.PERIOD})=1'
+              name: 'Loja: sem telemetria há {$SHOP.NODATA.PERIOD}'
+              priority: HIGH
+              description: 'A aplicação parou de enviar métricas: container parado, collector ou proxy fora do ar.'
+              tags:
+                - tag: scope
+                  value: availability
+        - uuid: 271129443aec4f3e81637a75a48a31dd
+          name: 'Checkouts processados (traces)'
+          type: TELEMETRY_QUERY
+          key: shop.trace.checkout.count
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanName
+                  value: checkout.process
+          tags:
+            - tag: component
+              value: traces
+        - uuid: 82126cc5e86d4651a296ae52d77e63bf
+          name: 'Checkouts com erro (traces)'
+          type: TELEMETRY_QUERY
+          key: shop.trace.checkout.errors
+          delay: '{$SHOP.FREQUENCY}'
+          description: 'Spans checkout.process com status Error: pagamento recusado, falta de estoque ou erro interno.'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanName
+                  value: checkout.process
+                - column: StatusCode
+                  value: Error
+          tags:
+            - tag: component
+              value: traces
+        - uuid: b216063bb485492dbed020ffc9b56df0
+          name: 'Checkout p95 (traces)'
+          type: TELEMETRY_QUERY
+          key: shop.trace.checkout.p95
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+            - type: MULTIPLIER
+              parameters:
+                - '1.0E-9'
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - function: PERCENTILE
+                column: Duration
+                parameters:
+                  - '95'
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanName
+                  value: checkout.process
+          tags:
+            - tag: component
+              value: traces
+        - uuid: 3c2dad1c57f348fe9e62eb585f5d48bd
+          name: 'Requisições HTTP com erro 500'
+          type: TELEMETRY_QUERY
+          key: shop.trace.http.errors
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanAttributes
+                  attribute_key: http.response.status_code
+                  value: '500'
+                - column: SpanKind
+                  value: Server
+          tags:
+            - tag: component
+              value: traces
+        - uuid: 9338a2111fd047e391211d13a0a8607d
+          name: 'Requisições HTTP'
+          type: TELEMETRY_QUERY
+          key: shop.trace.http.requests
+          delay: '{$SHOP.FREQUENCY}'
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanKind
+                  value: Server
+          tags:
+            - tag: component
+              value: traces
+        - uuid: 8eed6186a89947ec992703b08ee45b38
+          name: 'Pagamento p95 (traces)'
+          type: TELEMETRY_QUERY
+          key: shop.trace.payment.p95
+          delay: '{$SHOP.FREQUENCY}'
+          value_type: FLOAT
+          units: s
+          preprocessing:
+            - type: CHECK_NOT_SUPPORTED
+              parameters:
+                - '0'
+                - '^No value$'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: '{"columns":{"value":0}}'
+            - type: JSONPATH
+              parameters:
+                - $.columns.value
+            - type: MULTIPLIER
+              parameters:
+                - '1.0E-9'
+          time_shift: '{$SHOP.TIMESHIFT}'
+          lookback_limit: '{$SHOP.LOOKBACK}'
+          granularity: '{$SHOP.GRANULARITY}'
+          query:
+            aggregated_columns:
+              - function: PERCENTILE
+                column: Duration
+                parameters:
+                  - '95'
+                alias: value
+            filter:
+              evaltype: AND
+              conditions:
+                - column: ServiceName
+                  value: '{$SHOP.SERVICE.NAME}'
+                - column: SpanName
+                  value: payment.authorize
+          tags:
+            - tag: component
+              value: traces
+      discovery_rules:
+        - uuid: 52b14ad84f0a427a95bcc436a5a1bf6c
+          name: 'Descoberta de produtos'
+          type: HTTP_AGENT
+          key: shop.products.discovery
+          delay: 1h
+          description: 'Lê o catálogo em /api/products para criar itens de estoque e de sacola por produto.'
+          item_prototypes:
+            - uuid: e8ca7724e97f431e8a9b3459e8555878
+              name: 'Adicionados à sacola: {#PRODUCT.NAME}'
+              type: TELEMETRY_QUERY
+              key: 'shop.cart.added[{#PRODUCT.ID}]'
+              delay: '{$SHOP.FREQUENCY}'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - '^No value$'
+                  error_handler: CUSTOM_VALUE
+                  error_handler_params: '{"columns":{"value":0}}'
+                - type: JSONPATH
+                  parameters:
+                    - $.columns.value
+              time_shift: '{$SHOP.TIMESHIFT}'
+              lookback_limit: '{$SHOP.LOOKBACK}'
+              granularity: '{$SHOP.GRANULARITY}'
+              query:
+                signal_type: METRICS
+                aggregated_columns:
+                  - function: SUM
+                    column: Value
+                    alias: value
+                filter:
+                  evaltype: AND
+                  conditions:
+                    - column: Attributes
+                      attribute_key: shop.product.id
+                      value: '{#PRODUCT.ID}'
+                    - column: MetricName
+                      value: shop.cart.items_added
+                    - column: ServiceName
+                      value: '{$SHOP.SERVICE.NAME}'
+              tags:
+                - tag: component
+                  value: vendas
+                - tag: produto
+                  value: '{#PRODUCT.ID}'
+            - uuid: 0de74b6dda564984b499530b1bc1cfe8
+              name: 'Estoque: {#PRODUCT.NAME}'
+              type: TELEMETRY_QUERY
+              key: 'shop.stock[{#PRODUCT.ID}]'
+              delay: '{$SHOP.FREQUENCY}'
+              description: 'Menor estoque observado no minuto.'
+              preprocessing:
+                - type: CHECK_NOT_SUPPORTED
+                  parameters:
+                    - '0'
+                    - '^No value$'
+                - type: JSONPATH
+                  parameters:
+                    - $.columns.value
+              time_shift: '{$SHOP.TIMESHIFT}'
+              lookback_limit: '{$SHOP.LOOKBACK}'
+              granularity: '{$SHOP.GRANULARITY}'
+              query:
+                signal_type: METRICS
+                metric_point_type: GAUGE
+                aggregated_columns:
+                  - function: MIN
+                    column: Value
+                    alias: value
+                filter:
+                  evaltype: AND
+                  conditions:
+                    - column: Attributes
+                      attribute_key: shop.product.id
+                      value: '{#PRODUCT.ID}'
+                    - column: MetricName
+                      value: shop.inventory.stock
+                    - column: ServiceName
+                      value: '{$SHOP.SERVICE.NAME}'
+              tags:
+                - tag: component
+                  value: estoque
+                - tag: produto
+                  value: '{#PRODUCT.ID}'
+              trigger_prototypes:
+                - uuid: 38b8b6909b26473182e2506a80ea4cca
+                  expression: 'last(/Loja Zabbix Lab by OTLP/shop.stock[{#PRODUCT.ID}])<={$SHOP.STOCK.LOW}'
+                  name: 'Estoque baixo: {#PRODUCT.NAME} ({ITEM.LASTVALUE1})'
+                  priority: WARNING
+                  dependencies:
+                    - name: 'Produto esgotado: {#PRODUCT.NAME}'
+                      expression: 'last(/Loja Zabbix Lab by OTLP/shop.stock[{#PRODUCT.ID}])=0'
+                  tags:
+                    - tag: scope
+                      value: capacity
+                - uuid: fc7e7fe48020489ba261e3db41f2c90c
+                  expression: 'last(/Loja Zabbix Lab by OTLP/shop.stock[{#PRODUCT.ID}])=0'
+                  name: 'Produto esgotado: {#PRODUCT.NAME}'
+                  priority: HIGH
+                  description: 'O estoque do produto chegou a zero. A loja reabastece a cada RESTOCK_INTERVAL_MINUTES.'
+                  tags:
+                    - tag: scope
+                      value: availability
+          url: '{$SHOP.URL}/api/products'
+          lld_macro_paths:
+            - lld_macro: '{#PRODUCT.ID}'
+              path: $.id
+            - lld_macro: '{#PRODUCT.NAME}'
+              path: $.name
+      tags:
+        - tag: class
+          value: application
+        - tag: target
+          value: shop-demo
+      macros:
+        - macro: '{$SHOP.CHECKOUT.DURATION.WARN}'
+          value: '2'
+          description: 'Duração média do checkout (s) em um minuto que gera alerta.'
+        - macro: '{$SHOP.ERROR.LOGS.WARN}'
+          value: '0'
+          description: 'Logs ERROR em 5 minutos acima deste valor geram alerta.'
+        - macro: '{$SHOP.FREQUENCY}'
+          value: 1m
+          description: 'Intervalo de coleta dos itens.'
+        - macro: '{$SHOP.GRANULARITY}'
+          value: 1m
+          description: 'Janela de agregação de cada valor.'
+        - macro: '{$SHOP.LOGIN.FAILURE.WARN}'
+          value: '5'
+          description: 'Falhas de login em 5 minutos que geram alerta.'
+        - macro: '{$SHOP.LOOKBACK}'
+          value: 10m
+          description: 'Período máximo consultado quando a coleta fica atrasada.'
+        - macro: '{$SHOP.NODATA.PERIOD}'
+          value: 5m
+          description: 'Período sem telemetria da aplicação que gera alerta.'
+        - macro: '{$SHOP.NOSALES.PERIOD}'
+          value: 30m
+          description: 'Período sem nenhuma venda confirmada que gera alerta informativo.'
+        - macro: '{$SHOP.PAYMENT.DECLINE.WARN}'
+          value: '20'
+          description: 'Taxa de recusa de pagamentos (%) nos últimos 10 minutos que gera alerta.'
+        - macro: '{$SHOP.PAYMENT.MIN.ATTEMPTS}'
+          value: '5'
+          description: 'Mínimo de tentativas de pagamento em 10 minutos para avaliar a taxa de recusa.'
+        - macro: '{$SHOP.SERVICE.NAME}'
+          value: zabbix-shop-demo
+          description: 'Valor de service.name enviado pela aplicação (OTEL_SERVICE_NAME).'
+        - macro: '{$SHOP.STOCK.LOW}'
+          value: '3'
+          description: 'Estoque igual ou abaixo deste valor gera alerta de estoque baixo.'
+        - macro: '{$SHOP.TIMESHIFT}'
+          value: 30s
+          description: 'Atraso aplicado às consultas, para dar tempo de a telemetria chegar ao ClickHouse.'
+        - macro: '{$SHOP.URL}'
+          value: 'http://shop-app:8080'
+          description: 'URL interna da loja, usada pela descoberta de produtos (/api/products).'
+  triggers:
+    - uuid: 7ed8ad8f64bf4883a5d366dba29102f7
+      expression: 'last(/Loja Zabbix Lab by OTLP/shop.payment.decline.rate)>{$SHOP.PAYMENT.DECLINE.WARN} and (sum(/Loja Zabbix Lab by OTLP/shop.orders.declined,10m)+sum(/Loja Zabbix Lab by OTLP/shop.orders.confirmed,10m))>={$SHOP.PAYMENT.MIN.ATTEMPTS}'
+      name: 'Loja: taxa de recusa de pagamentos alta ({ITEM.LASTVALUE1})'
+      priority: AVERAGE
+      tags:
+        - tag: scope
+          value: performance
+  graphs:
+    - uuid: 0c2c493513924ce29ac67cce819d647b
+      name: 'Loja: duração do checkout'
+      graph_items:
+        - color: 0969DA
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.checkout.duration.avg
+        - sortorder: '1'
+          color: CF222E
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.checkout.duration.max
+        - sortorder: '2'
+          color: D29922
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.trace.checkout.p95
+    - uuid: 3eb275db601d44b6935cbe72f1e7a054
+      name: 'Loja: pedidos por forma de pagamento'
+      type: STACKED
+      graph_items:
+        - color: 1A7F37
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.confirmed.pix
+        - sortorder: '1'
+          color: 0969DA
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.confirmed.credit_card
+        - sortorder: '2'
+          color: 8250DF
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.confirmed.boleto
+    - uuid: 11428290ca4c4a818b497ba2864a30be
+      name: 'Loja: pedidos por resultado'
+      type: STACKED
+      graph_items:
+        - color: 1A7F37
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.confirmed
+        - sortorder: '1'
+          color: D29922
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.declined
+        - sortorder: '2'
+          color: 8250DF
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.out_of_stock
+        - sortorder: '3'
+          color: CF222E
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.orders.error
+    - uuid: 35efe0ad5deb49f697abdc40502501bb
+      name: 'Loja: receita por minuto'
+      graph_items:
+        - drawtype: GRADIENT_LINE
+          color: 0969DA
+          item:
+            host: 'Loja Zabbix Lab by OTLP'
+            key: shop.revenue
