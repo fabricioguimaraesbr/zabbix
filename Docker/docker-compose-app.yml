@@ -1,20 +1,42 @@
+# Demonstração APM: aplicação de login instrumentada com OpenTelemetry,
+# OpenTelemetry Collector e proxy Zabbix com receptor OTLP (--with-apm).
+# Execute pela raiz do repositório:  scripts/compose.sh dev app up -d --build
+
+configs:
+  zabbix_proxy_conf:
+    content: |
+      ProxyMode=0
+      Server=${ZBX_PROXY_SERVER:-zabbix-server}
+      Hostname=${ZBX_PROXY_HOSTNAME:-zabbix-apm-proxy}
+      DBName=/var/lib/zabbix/db_data/zabbix_proxy.db
+      LogType=console
+      APMListenIP=0.0.0.0
+      APMListenPort=${ZBX_PROXY_APM_PORT:-4317}
+
 services:
   zabbix-apm-proxy:
-    image: zabbix-proxy-apm:alpine-trunk
+    image: zabbix-proxy-apm:${ZBX_IMAGE_TAG:-alpine-trunk}
     build:
       context: ./zabbix-apm-proxy
+      args:
+        ZBX_IMAGE_TAG: ${ZBX_IMAGE_TAG:-alpine-trunk}
+        ZBX_VERSION: ${ZBX_VERSION:-8.0}
     command: ["/usr/sbin/zabbix_proxy", "--foreground", "-c", "/etc/zabbix/zabbix_proxy_custom.conf"]
+    configs:
+      - source: zabbix_proxy_conf
+        target: /etc/zabbix/zabbix_proxy_custom.conf
     volumes:
-      - '/Users/fabricio/VSCode/docker-volume/zabbix-apm-proxy:/var/lib/zabbix/db_data'
-      - ./zabbix_proxy.conf:/etc/zabbix/zabbix_proxy_custom.conf:ro
+      - '${DATA_DIR:-./data}/zabbix-apm-proxy:/var/lib/zabbix/db_data'
     networks:
       - network-zabbix
     restart: unless-stopped
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
+    image: otel/opentelemetry-collector-contrib:${OTEL_COLLECTOR_IMAGE_TAG:-latest}
     command:
       - --config=/etc/otelcol-contrib/config.yaml
+    environment:
+      ZBX_PROXY_OTLP_ENDPOINT: ${ZBX_PROXY_HOSTNAME:-zabbix-apm-proxy}:${ZBX_PROXY_APM_PORT:-4317}
     volumes:
       - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
     networks:
@@ -28,13 +50,13 @@ services:
       context: ./login-app
     environment:
       APP_USERNAME: ${APP_USERNAME:-demo}
-      APP_PASSWORD: ${APP_PASSWORD:?Configure APP_PASSWORD in Docker/.env}
-      SESSION_SECRET: ${SESSION_SECRET:?Configure SESSION_SECRET in Docker/.env}
-      OTEL_SERVICE_NAME: zabbix-login-demo
+      APP_PASSWORD: ${APP_PASSWORD:?Defina APP_PASSWORD no arquivo config/<ambiente>.env}
+      SESSION_SECRET: ${SESSION_SECRET:?Defina SESSION_SECRET no arquivo config/<ambiente>.env}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-zabbix-login-demo}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
     ports:
-      - '8080:8080'
+      - '${APP_PORT:-8080}:8080'
     networks:
       - network-zabbix
     depends_on:
@@ -43,5 +65,5 @@ services:
 
 networks:
   network-zabbix:
-    name: zabbix-network
+    name: ${DOCKER_NETWORK:-zabbix-network}
     external: true

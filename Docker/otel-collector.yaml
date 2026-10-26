@@ -8,7 +8,7 @@ receivers:
 
 exporters:
   otlp/zabbix:
-    endpoint: zabbix-apm-proxy:4317
+    endpoint: ${env:ZBX_PROXY_OTLP_ENDPOINT}
     tls:
       insecure: true
 

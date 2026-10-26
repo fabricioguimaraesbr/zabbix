@@ -1,0 +1,17 @@
+# Arquivos de ambiente reais (apenas os *.env.example são versionados)
+config/*.env
+!config/*.env.example
+.env
+Docker/.env
+
+# Volumes persistentes locais
+Docker/data/
+data/
+
+# Dependências
+node_modules/
+
+# Sistema operacional / editores
+.DS_Store
+.vscode/
+.idea/

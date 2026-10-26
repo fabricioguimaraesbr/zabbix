@@ -1,6 +1,7 @@
 ARG ZBX_VERSION=8.0
+ARG ZBX_IMAGE_TAG=alpine-trunk
 
-FROM zabbix/zabbix-build-sqlite3:alpine-trunk AS builder
+FROM zabbix/zabbix-build-sqlite3:${ZBX_IMAGE_TAG} AS builder
 
 RUN apk add --no-cache grpc-dev protobuf-dev protobuf grpc-plugins pkgconf
 
@@ -33,7 +34,7 @@ RUN ./bootstrap.sh && \
         --silent && \
     make -j"$(nproc)" -s
 
-FROM zabbix/zabbix-proxy-sqlite3:alpine-trunk
+FROM zabbix/zabbix-proxy-sqlite3:${ZBX_IMAGE_TAG}
 
 ARG ZBX_VERSION
 USER root
